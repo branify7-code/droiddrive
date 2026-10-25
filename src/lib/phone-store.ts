@@ -339,6 +339,9 @@ export const usePhone = create<PhoneState>((set, get) => ({
         driveSessionExpired: false,
         prefsReady: false,
         prefsCorrupted: false,
+        appsReady: false,
+        appsCorrupted: false,
+        installedApps: [],
       });
       persistClientId(cid);
       markDriveConnected();
@@ -381,6 +384,9 @@ export const usePhone = create<PhoneState>((set, get) => ({
         driveSessionExpired: false,
         prefsReady: false,
         prefsCorrupted: false,
+        appsReady: false,
+        appsCorrupted: false,
+        installedApps: [],
       });
       markDriveConnected();
       void get().hydratePrefs();
@@ -416,6 +422,9 @@ export const usePhone = create<PhoneState>((set, get) => ({
       driveSessionExpired: false,
       prefsReady: false,
       prefsCorrupted: false,
+      appsReady: false,
+      appsCorrupted: false,
+      installedApps: [],
     });
     get().showToast("Switched to local virtual storage");
     void get().hydratePrefs();
@@ -431,10 +440,14 @@ export const usePhone = create<PhoneState>((set, get) => ({
   markLocalAuthNeeded: () => set({ localAuthNeeded: true }),
 
   localAuthResolved: (username, adoptedFiles) => {
+    bumpAccountGen(); // local identity changed — in-flight walks/installs are stale
     set((s) => ({
       localUser: username,
       localAuthNeeded: false,
       storageEpoch: s.storageEpoch + 1,
+      appsReady: false,
+      appsCorrupted: false,
+      installedApps: [],
     }));
     get().showToast(
       adoptedFiles && adoptedFiles > 0
@@ -449,7 +462,14 @@ export const usePhone = create<PhoneState>((set, get) => ({
     } catch {
       /* ignore network errors on sign-out */
     }
-    set((s) => ({ localUser: null, storageEpoch: s.storageEpoch + 1 }));
+    bumpAccountGen(); // local identity changed — in-flight walks/installs are stale
+    set((s) => ({
+      localUser: null,
+      storageEpoch: s.storageEpoch + 1,
+      appsReady: false,
+      appsCorrupted: false,
+      installedApps: [],
+    }));
     get().showToast("Signed out of local storage");
   },
 
@@ -568,6 +588,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
 
   hydrateApps: async () => {
     const s = get();
+    const gen = accountGen();
     try {
       if (s.storageMode === "drive") {
         if (!s.driveToken || !s.driveRootId) {
@@ -576,6 +597,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
         }
         const provider = new DriveProvider(s.driveToken, s.driveRootId);
         const r = await loadAppsFromProvider(provider);
+        if (gen !== accountGen()) return; // account switched mid-load — discard stale response
         if (r.corrupted) {
           set({ appsCorrupted: true, appsReady: true, installedApps: [] });
           get().showToast("Installed-apps file is corrupted - app list cleared (original kept)");
@@ -588,6 +610,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
         });
       } else {
         const r = loadLocalApps();
+        if (gen !== accountGen()) return; // account switched mid-load — discard stale response
         if (r.corrupted) {
           set({ appsCorrupted: true, appsReady: true, installedApps: [] });
           get().showToast("Saved app list is corrupted - apps cleared (original kept)");
@@ -600,38 +623,77 @@ export const usePhone = create<PhoneState>((set, get) => ({
         });
       }
     } catch {
-      // App registry is non-critical — never block the phone on it.
-      set({ appsReady: true });
+      // App registry is non-critical — never block the phone on it. But never
+      // leave the PREVIOUS account's app list visible under the new one either.
+      if (gen === accountGen()) set({ appsReady: true, installedApps: [] });
     }
   },
 
   installApk: async (opts) => {
     const s = get();
+    const gen = accountGen();
     const provider = s.getProvider();
-    const { app } = await installAppInProvider(provider, opts);
-    const next = upsertLocal(s.installedApps, app);
+    const { app, uploaded } = await installAppInProvider(provider, opts);
+    if (gen !== accountGen()) {
+      // Storage identity changed while the APK was uploading — the blob landed
+      // on the OLD account. Cancel: remove the fresh orphan (best effort) and
+      // surface failure instead of pretending the app is installed.
+      if (uploaded) {
+        try {
+          await provider.remove(app.apkFileId);
+        } catch {
+          /* best-effort cleanup */
+        }
+      }
+      throw new Error("Storage account changed during installation — install cancelled");
+    }
+    const prev = s.installedApps;
+    const next = upsertLocal(prev, app);
     set({ installedApps: next });
     try {
       await persistApps(get, provider, next);
+      // If the identity changed while saving, the save targeted the account the
+      // operation started on (consistent there); the switch re-hydrates state.
+      return app;
     } catch (e) {
-      get().showToast(
-        e instanceof Error ? e.message : "App installed, but the app list could not be saved"
-      );
+      // Save failure is an installation failure: revert the optimistic entry
+      // (unless a newer operation owns the list) and rethrow so the UI never
+      // reports success.
+      if (gen === accountGen() && get().installedApps === next) {
+        set({ installedApps: prev });
+      }
+      throw e instanceof Error ? e : new Error("App list could not be saved — installation failed");
     }
-    return app;
   },
 
   uninstallApp: async (packageName, alsoDeleteApk) => {
     const s = get();
+    const gen = accountGen();
     const provider = s.getProvider();
-    const next = await uninstallAppFromProvider(provider, s.installedApps, packageName, alsoDeleteApk);
+    const prev = s.installedApps;
+    const next = await uninstallAppFromProvider(provider, prev, packageName, alsoDeleteApk);
+    if (gen !== accountGen()) {
+      // Identity switched mid-flight: the APK blob was already removed from the
+      // OLD account, so persist the manifest removal THERE (keeps it consistent)
+      // and leave current state alone — the switch re-hydrates it.
+      try {
+        await saveAppsToProvider(provider, appsFromList(next));
+      } catch {
+        /* best-effort for the abandoned account */
+      }
+      return;
+    }
     set({ installedApps: next, appInfoFor: s.appInfoFor === packageName ? null : s.appInfoFor });
     try {
       await persistApps(get, provider, next);
     } catch (e) {
-      get().showToast(
-        e instanceof Error ? e.message : "App removed, but the app list could not be saved"
-      );
+      if (get().installedApps === next) {
+        set({
+          installedApps: prev,
+          appInfoFor: get().appInfoFor === packageName ? packageName : get().appInfoFor,
+        });
+      }
+      throw e instanceof Error ? e : new Error("App list could not be saved — uninstall failed");
     }
   },
 
@@ -641,6 +703,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
    */
   resetCorruptedApps: async () => {
     const s = get();
+    const gen = accountGen();
     try {
       if (s.storageMode === "drive") {
         if (!s.driveToken || !s.driveRootId) return;
@@ -662,15 +725,17 @@ export const usePhone = create<PhoneState>((set, get) => ({
           }
           await saveAppsToProvider(provider, defaultAppsManifest());
         }
+        if (gen !== accountGen()) return; // switched mid-reset — the new account hydrates fresh
         set({ appsCorrupted: false, appsReady: true, installedApps: [] });
         get().showToast("Corrupted app list archived and replaced");
       } else {
         clearLocalApps();
+        if (gen !== accountGen()) return;
         set({ appsCorrupted: false, appsReady: true, installedApps: [] });
         get().showToast("Corrupted app list cleared - starting fresh");
       }
     } catch (e) {
-      get().showToast(e instanceof Error ? e.message : "Could not reset app list");
+      if (gen === accountGen()) get().showToast(e instanceof Error ? e.message : "Could not reset app list");
     }
   },
 }));
