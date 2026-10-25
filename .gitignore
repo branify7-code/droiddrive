@@ -52,3 +52,7 @@ prompt
 server.log
 # Skills directory
 /skills/
+# local runtime data (recreate with: bunx prisma db push)
+/db/
+*.db
+*.db-journal
