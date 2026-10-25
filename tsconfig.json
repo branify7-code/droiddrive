@@ -41,6 +41,7 @@
     "examples",
     "skills",
     "tests",
-    "scripts"
+    "scripts",
+    "tmp"
   ]
 }
