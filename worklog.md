@@ -22,3 +22,17 @@ Stage Summary:
 - Delivered DroidDrive virtual Android phone at / route
 - Storage: Google Drive (user's own OAuth Client ID, client-side; PhoneStorage folder in their Drive root, quota shows their plan e.g. 5TB) with local Prisma fallback (256GB virtual)
 - User replied offering Supabase credentials - declined (not needed; Drive is client-side OAuth, no backend DB required for storage)
+
+---
+Task ID: 2
+Agent: main (Z.ai)
+Task: Respond to user's request for the list of required credentials/API keys
+
+Work Log:
+- Re-verified project state: all source files present, dev server healthy (GET / 200, /api/storage/quota 200), lint clean, prior browser verification complete
+- Confirmed no backend secrets are required: Drive access is client-side OAuth via GIS token client; local mode uses Prisma/SQLite
+- Prepared credential checklist for user: (1) REQUIRED - Google OAuth 2.0 Client ID (Web application type, Drive API enabled, JS origins = localhost:3000 + preview origin); (2) NOT needed - Supabase URL/key, Drive API key, OAuth client secret
+
+Stage Summary:
+- App is feature-complete and awaiting only the user's Google OAuth Client ID
+- Client ID can be pasted by user in Settings (copyable origin provided there) or sent in chat to be baked in as default
