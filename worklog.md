@@ -95,3 +95,19 @@ Work Log:
 Stage Summary:
 - Local feat/apk-installer ready to push: d1d6f13 + worklog audit commit
 - All CI-equivalent checks green locally; awaiting credentials to publish and verify remote SHA
+
+---
+Task ID: 7
+Agent: main (Z.ai)
+Task: Export complete source at commit fefa9dc as sanitized downloadable ZIP
+
+Work Log:
+- Exported git tree fefa9dc via git archive (prefix droiddrive/) -> download/droiddrive-src-fefa9dc.zip (1,577,593 bytes)
+- Pre-export content scan of all 133 committed blobs: no ghp_/github_pat_/private_key/client_secret/AIza/sk- matches; .env.example contains only DATABASE_URL placeholder
+- Post-export verification: 133 file entries (no dir-only count inflation); forbidden set absent (.env, .env.local, node_modules, .next, db/, upload/, logs, .git, client_secret, token); required set present (.env.example 507B, bun.lock 332KB, package.json 3.3KB, tests/fixtures/kiss-224.apk 2,205,788B)
+- Extracted-from-ZIP package.json contains "app-info-parser": "^1.1.6"; fixture sha256 (da6ab0b1219ad3b5...) identical to git blob fefa9dc:tests/fixtures/kiss-224.apk
+- unzip -t: no errors
+
+Stage Summary:
+- Deliverable: /home/z/my-project/download/droiddrive-src-fefa9dc.zip (commit fefa9dce03153bfc0e756873c115a7abca1435d7)
+- Branch push status UNCHANGED: feat/apk-installer still local-only; no push performed, no token requested
