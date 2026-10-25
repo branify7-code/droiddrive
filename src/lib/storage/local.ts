@@ -1,9 +1,38 @@
-import { StorageItem, QuotaInfo, StorageProvider, UploadOptions } from "./types";
+import { StorageItem, QuotaInfo, StorageProvider, UploadOptions, StorageError } from "./types";
 
 /**
  * LocalProvider — virtual device storage backed by the app's own API routes
- * (Prisma metadata + blob files on disk). Used until Google Drive is connected.
+ * (Prisma metadata + blob files on disk). The server requires an authenticated
+ * session and scopes every row to the caller; when a 401 comes back we invoke
+ * the registered handler (the UI sign-in dialog) instead of failing silently.
  */
+
+type LocalAuthHandler = (message: string) => void;
+
+let authHandler: LocalAuthHandler | null = null;
+
+/** Register the UI callback invoked whenever the local API returns 401. */
+export function setLocalAuthHandler(fn: LocalAuthHandler | null) {
+  authHandler = fn;
+}
+
+function statusMessage(status: number, fallback: string, body?: { error?: string }): Error {
+  if (status === 401) {
+    const msg = body?.error || "Sign in to use local storage";
+    authHandler?.(msg);
+    return new StorageError(msg, 401);
+  }
+  return new StorageError(body?.error || fallback, status);
+}
+
+async function readError(res: Response): Promise<{ error?: string } | undefined> {
+  try {
+    return (await res.json()) as { error?: string };
+  } catch {
+    return undefined;
+  }
+}
+
 export class LocalProvider implements StorageProvider {
   readonly kind = "local" as const;
   readonly rootId = "root";
@@ -12,7 +41,7 @@ export class LocalProvider implements StorageProvider {
     const res = await fetch(`/api/storage/list?folderId=${encodeURIComponent(folderId)}`, {
       cache: "no-store",
     });
-    if (!res.ok) throw new Error("Failed to list files");
+    if (!res.ok) throw statusMessage(res.status, "Failed to list files", await readError(res));
     const data = await res.json();
     return data.items as StorageItem[];
   }
@@ -36,15 +65,25 @@ export class LocalProvider implements StorageProvider {
             reject(new Error("Bad server response"));
           }
         } else {
-          reject(new Error(`Upload failed (${xhr.status})`));
+          let body: { error?: string } | undefined;
+          try {
+            body = JSON.parse(xhr.responseText);
+          } catch {
+            /* non-JSON error */
+          }
+          reject(statusMessage(xhr.status, `Upload failed (${xhr.status})`, body));
         }
       };
-      xhr.onerror = () => reject(new Error("Upload failed"));
+      xhr.onerror = () => reject(new Error("Upload failed (network error)"));
+      xhr.onabort = () => reject(new Error("Upload cancelled"));
       if (opts?.signal) {
-        opts.signal.addEventListener("abort", () => {
-          xhr.abort();
-          reject(new Error("Upload cancelled"));
-        });
+        opts.signal.addEventListener(
+          "abort",
+          () => {
+            xhr.abort();
+          },
+          { once: true }
+        );
       }
       xhr.send(form);
     });
@@ -52,7 +91,7 @@ export class LocalProvider implements StorageProvider {
 
   async download(id: string): Promise<Blob> {
     const res = await fetch(`/api/storage/file/${id}`);
-    if (!res.ok) throw new Error("Failed to download file");
+    if (!res.ok) throw statusMessage(res.status, "Failed to download file", await readError(res));
     return res.blob();
   }
 
@@ -62,14 +101,14 @@ export class LocalProvider implements StorageProvider {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, folderId: parentId }),
     });
-    if (!res.ok) throw new Error("Failed to create folder");
+    if (!res.ok) throw statusMessage(res.status, "Failed to create folder", await readError(res));
     const data = await res.json();
     return data.item as StorageItem;
   }
 
   async remove(id: string): Promise<void> {
     const res = await fetch(`/api/storage/file/${id}`, { method: "DELETE" });
-    if (!res.ok) throw new Error("Failed to delete");
+    if (!res.ok) throw statusMessage(res.status, "Failed to delete", await readError(res));
   }
 
   async rename(id: string, name: string): Promise<void> {
@@ -78,17 +117,21 @@ export class LocalProvider implements StorageProvider {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
-    if (!res.ok) throw new Error("Failed to rename");
+    if (!res.ok) throw statusMessage(res.status, "Failed to rename", await readError(res));
   }
 
   async updateContent(id: string, content: string): Promise<void> {
-    const res = await fetch(`/api/storage/file/${id}`, { method: "PUT", body: content });
-    if (!res.ok) throw new Error("Failed to save");
+    const res = await fetch(`/api/storage/file/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "text/plain; charset=utf-8" },
+      body: content,
+    });
+    if (!res.ok) throw statusMessage(res.status, "Failed to save", await readError(res));
   }
 
   async quota(): Promise<QuotaInfo> {
     const res = await fetch("/api/storage/quota", { cache: "no-store" });
-    if (!res.ok) throw new Error("Failed to read quota");
+    if (!res.ok) throw statusMessage(res.status, "Failed to read quota", await readError(res));
     return res.json();
   }
 

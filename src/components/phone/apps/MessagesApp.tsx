@@ -132,7 +132,11 @@ export default function MessagesApp() {
 
   return (
     <div className="flex h-full flex-col">
-      <AppHeader title="Messages" onBack={() => usePhone.getState().closeApp()} />
+      <AppHeader
+        title="Messages"
+        subtitle="Simulation - no real SMS is sent or received"
+        onBack={() => usePhone.getState().closeApp()}
+      />
       <div className="flex-1 space-y-1 overflow-y-auto px-2 pb-16 phone-scroll">
         {threads.map((t) => (
           <button

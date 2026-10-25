@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Plus, FileText, Trash2, X, Save } from "lucide-react";
-import { usePhone } from "@/lib/phone-store";
+import { usePhone, accountGen } from "@/lib/phone-store";
 import { formatDate } from "@/lib/format";
 import type { StorageItem } from "@/lib/storage/types";
 import { AppHeader } from "../shell";
@@ -12,6 +12,7 @@ const NOTES_FOLDER = "Notes";
 export default function NotesApp() {
   const getProvider = usePhone((s) => s.getProvider);
   const showToast = usePhone((s) => s.showToast);
+  const storageEpoch = usePhone((s) => s.storageEpoch);
 
   const [notes, setNotes] = useState<(StorageItem & { text?: string })[]>([]);
   const [loading, setLoading] = useState(true);
@@ -19,6 +20,7 @@ export default function NotesApp() {
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
+    const gen = accountGen();
     setLoading(true);
     try {
       const provider = getProvider();
@@ -26,17 +28,19 @@ export default function NotesApp() {
       let folder = rootItems.find((i) => i.isFolder && i.name === NOTES_FOLDER);
       if (!folder) folder = await provider.createFolder(provider.rootId, NOTES_FOLDER);
       const items = (await provider.list(folder.id)).filter((f) => !f.isFolder);
+      if (gen !== accountGen()) return; // account switched — discard
       setNotes(items.sort((a, b) => (a.modifiedTime < b.modifiedTime ? 1 : -1)));
     } catch (e) {
+      if (gen !== accountGen()) return;
       showToast(e instanceof Error ? e.message : "Failed to load notes");
     } finally {
-      setLoading(false);
+      if (gen === accountGen()) setLoading(false);
     }
   }, [getProvider, showToast]);
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, storageEpoch]);
 
   const openNote = async (item: StorageItem) => {
     try {

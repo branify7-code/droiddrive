@@ -30,24 +30,31 @@ function StorageLine() {
   const storageMode = usePhone((s) => s.storageMode);
   const driveQuota = usePhone((s) => s.driveQuota);
   const driveEmail = usePhone((s) => s.driveEmail);
+  const localUser = usePhone((s) => s.localUser);
+  const storageEpoch = usePhone((s) => s.storageEpoch);
   const [local, setLocal] = useState<{ usage: number; limit: number } | null>(null);
 
   useEffect(() => {
     if (storageMode === "local") {
       fetch("/api/storage/quota")
-        .then((r) => r.json())
-        .then(setLocal)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => setLocal(d && typeof d.usage === "number" ? d : null))
         .catch(() => {});
     }
-  }, [storageMode]);
+  }, [storageMode, storageEpoch, localUser]);
 
   if (storageMode === "drive") {
     const q = driveQuota;
+    const usageText = q
+      ? q.unlimited
+        ? `${formatBytes(q.usage)} used`
+        : `${formatBytes(q.usage)} of ${formatBytes(q.limit)} used`
+      : "connected";
     return (
       <div className="flex items-center gap-2 text-[11px] text-white/70">
         <Cloud className="h-3.5 w-3.5 shrink-0 text-emerald-300" />
         <span className="min-w-0 truncate">
-          Drive{driveEmail ? ` - ${driveEmail}` : ""} - {q ? `${formatBytes(q.usage)} of ${formatBytes(q.limit)} used` : "connected"}
+          Drive{driveEmail ? ` - ${driveEmail}` : ""} - {usageText}
         </span>
       </div>
     );
@@ -56,7 +63,12 @@ function StorageLine() {
     <div className="flex items-center gap-2 text-[11px] text-white/60">
       <HardDrive className="h-3.5 w-3.5 shrink-0 text-white/50" />
       <span className="min-w-0 truncate">
-        {local ? `${formatBytes(local.usage)} of ${formatBytes(local.limit)} used` : "Local storage"} - connect Drive in Settings
+        {localUser
+          ? local
+            ? `${formatBytes(local.usage)} of ${formatBytes(local.limit)} used`
+            : "Local storage"
+          : "Local storage locked - sign in"}
+        {" - connect Drive in Settings"}
       </span>
     </div>
   );

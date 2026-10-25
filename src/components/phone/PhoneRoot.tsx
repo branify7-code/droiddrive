@@ -15,6 +15,7 @@ import {
   PhoneToast,
 } from "./shell";
 import { HomeScreen, AppDrawer } from "./HomeScreen";
+import LocalAuthDialog from "./LocalAuthDialog";
 
 export default function PhoneRoot() {
   const booting = usePhone((s) => s.booting);
@@ -23,10 +24,16 @@ export default function PhoneRoot() {
   const activeApp = usePhone((s) => s.activeApp);
   const trySilentReconnect = usePhone((s) => s.trySilentReconnect);
 
-  /* attempt silent Drive reconnect (if a Client ID was saved before) */
+  /* boot-time setup: silent Drive reconnect, local session probe, prefs restore */
   useEffect(() => {
     trySilentReconnect();
-     
+    void usePhone.getState().hydratePrefs();
+    fetch("/api/auth/session")
+      .then((r) => r.json())
+      .then((d: { user: { username: string } | null }) => {
+        usePhone.getState().setLocalUser(d.user?.username ?? null);
+      })
+      .catch(() => {});
   }, []);
 
   /* keyboard: Escape acts as back */
@@ -91,6 +98,9 @@ export default function PhoneRoot() {
       )}
 
       <Shade />
+
+      {/* local storage sign-in (server API returned 401) */}
+      <LocalAuthDialog />
 
       {/* lock screen */}
       <AnimatePresence>{!booting && locked && <LockScreen key="lock" />}</AnimatePresence>

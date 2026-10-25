@@ -1,62 +1,93 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
 import { db } from "@/lib/db";
+import { validateFileName } from "@/lib/auth";
+import {
+  localStorageDir,
+  requireUser,
+  badRequest,
+  notFound,
+  uploadLimitBytes,
+} from "@/lib/storage/server";
 
 export const dynamic = "force-dynamic";
 
-const STORAGE_DIR = "/home/z/my-project/db/vstorage";
+export async function POST(req: Request) {
+  const auth = await requireUser(req);
+  if (auth.res) return auth.res;
+  const userId = auth.user.id;
 
-export async function POST(req: NextRequest) {
+  let form: FormData;
   try {
-    const form = await req.formData();
-    const file = form.get("file") as File | null;
-    const folderId = (form.get("folderId") as string) || "root";
-
-    if (!file) {
-      return NextResponse.json({ error: "No file provided" }, { status: 400 });
-    }
-
-    const parentId = folderId === "root" ? null : folderId;
-    if (parentId) {
-      const parent = await db.vFile.findUnique({ where: { id: parentId } });
-      if (!parent || !parent.isFolder) {
-        return NextResponse.json({ error: "Folder not found" }, { status: 404 });
-      }
-    }
-
-    await mkdir(STORAGE_DIR, { recursive: true });
-
-    const blobId = randomUUID();
-    const buf = Buffer.from(await file.arrayBuffer());
-    const blobPath = path.join(STORAGE_DIR, blobId);
-    await writeFile(blobPath, buf);
-
-    const row = await db.vFile.create({
-      data: {
-        id: blobId,
-        name: file.name || "untitled",
-        mime: file.type || "application/octet-stream",
-        isFolder: false,
-        parentId,
-        size: buf.length,
-        blobPath,
-      },
-    });
-
-    return NextResponse.json({
-      item: {
-        id: row.id,
-        name: row.name,
-        mimeType: row.mime,
-        isFolder: row.isFolder,
-        size: row.size,
-        modifiedTime: row.updatedAt.toISOString(),
-      },
-    });
-  } catch (err) {
-    console.error("upload error", err);
-    return NextResponse.json({ error: "Upload failed" }, { status: 500 });
+    form = await req.formData();
+  } catch {
+    return badRequest("Expected multipart/form-data");
   }
+
+  const file = form.get("file");
+  const folderId = (form.get("folderId") as string) || "root";
+
+  if (!(file instanceof File)) {
+    return badRequest("No file provided");
+  }
+
+  const name = validateFileName(file.name || "untitled");
+  if (!name) return badRequest("Invalid file name");
+
+  if (file.size > uploadLimitBytes()) {
+    return NextResponse.json(
+      { error: `File too large (limit ${Math.round(uploadLimitBytes() / 1024 / 1024)} MB)` },
+      { status: 413 }
+    );
+  }
+
+  const parentId = folderId === "root" ? null : folderId;
+  if (parentId) {
+    const parent = await db.vFile.findFirst({
+      where: { id: parentId, ownerId: userId },
+    });
+    if (!parent || !parent.isFolder) {
+      return notFound("Folder not found");
+    }
+  }
+
+  const dir = localStorageDir();
+  await mkdir(dir, { recursive: true });
+
+  const blobId = randomUUID();
+  const buf = Buffer.from(await file.arrayBuffer());
+  if (buf.length > uploadLimitBytes()) {
+    return NextResponse.json(
+      { error: `File too large (limit ${Math.round(uploadLimitBytes() / 1024 / 1024)} MB)` },
+      { status: 413 }
+    );
+  }
+  const blobPath = path.join(dir, blobId);
+  await writeFile(blobPath, buf);
+
+  const row = await db.vFile.create({
+    data: {
+      id: blobId,
+      name,
+      mime: file.type || "application/octet-stream",
+      isFolder: false,
+      parentId,
+      size: buf.length,
+      blobPath,
+      ownerId: userId,
+    },
+  });
+
+  return NextResponse.json({
+    item: {
+      id: row.id,
+      name: row.name,
+      mimeType: row.mime,
+      isFolder: row.isFolder,
+      size: row.size,
+      modifiedTime: row.updatedAt.toISOString(),
+    },
+  });
 }

@@ -36,7 +36,11 @@ export default function DialerApp() {
 
   return (
     <div className="relative flex h-full flex-col">
-      <AppHeader title="Phone" onBack={() => usePhone.getState().closeApp()} />
+      <AppHeader
+        title="Phone"
+        subtitle="Simulation - no real cellular calls are placed"
+        onBack={() => usePhone.getState().closeApp()}
+      />
 
       <div className="flex flex-1 flex-col items-center justify-end px-8 pb-2">
         <p className="min-h-[44px] text-center text-[30px] font-light tracking-wide text-white">{num || <span className="text-white/25">Enter number</span>}</p>

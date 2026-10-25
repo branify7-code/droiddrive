@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { X, Download, Trash2, RefreshCw, Upload, ImageOff } from "lucide-react";
-import { usePhone } from "@/lib/phone-store";
+import { usePhone, accountGen } from "@/lib/phone-store";
 import { formatBytes, fileKindOf } from "@/lib/format";
 import type { StorageItem } from "@/lib/storage/types";
 import { walkAll } from "@/lib/storage/drive";
@@ -11,6 +11,8 @@ import { AppHeader } from "../shell";
 export default function PhotosApp() {
   const getProvider = usePhone((s) => s.getProvider);
   const showToast = usePhone((s) => s.showToast);
+  const storageEpoch = usePhone((s) => s.storageEpoch);
+  const driveEmail = usePhone((s) => s.driveEmail);
 
   const [images, setImages] = useState<StorageItem[]>([]);
   const [urls, setUrls] = useState<Record<string, string>>({});
@@ -43,10 +45,15 @@ export default function PhotosApp() {
   );
 
   const load = useCallback(async () => {
+    const gen = accountGen();
     setLoading(true);
     try {
       const provider = getProvider();
-      const all = await walkAll(provider, provider.rootId);
+      const all = await walkAll(provider, provider.rootId, {
+        onTruncated: () =>
+          showToast("Some deep folders were skipped (6-level traversal limit)"),
+      });
+      if (gen !== accountGen()) return; // account switched mid-walk — discard
       const imgs = all
         .filter((f) => fileKindOf(f).kind === "image")
         .sort((a, b) => (a.modifiedTime < b.modifiedTime ? 1 : -1));
@@ -61,17 +68,29 @@ export default function PhotosApp() {
           }
         })
       );
+      if (gen !== accountGen()) return;
       setUrls((u) => ({ ...u, ...next }));
     } catch (e) {
+      if (gen !== accountGen()) return;
       showToast(e instanceof Error ? e.message : "Failed to load photos");
     } finally {
-      setLoading(false);
+      if (gen === accountGen()) setLoading(false);
     }
   }, [getProvider, getThumbUrl, showToast]);
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, storageEpoch]);
+
+  /* account switched: drop cached thumbnails and gallery immediately */
+  useEffect(() => {
+    setImages([]);
+    setUrls({});
+    for (const url of Object.values(thumbCache.current)) {
+      if (url.startsWith("blob:")) URL.revokeObjectURL(url);
+    }
+    thumbCache.current = {};
+  }, [driveEmail, storageEpoch]);
 
   const viewerUrl = async (item: StorageItem) => {
     const provider = getProvider();

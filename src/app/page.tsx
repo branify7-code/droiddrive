@@ -56,23 +56,23 @@ export default function Home() {
           </div>
         </div>
         <p className="text-[13px] leading-relaxed text-white/55">
-          A fully interactive Android-style phone that runs in your desktop browser. Use it like a
-          real device: swipe to unlock, open apps, upload files - and connect Google Drive to use
-          your cloud quota as the phone&apos;s internal storage.
+          A fully interactive Android-style phone interface that runs in your desktop browser. Use
+          it like a device: swipe to unlock, open apps, upload files - and connect Google Drive to
+          use your cloud quota as the phone&apos;s internal storage.
         </p>
         <ul className="mt-6 space-y-3.5 text-[13px] text-white/70">
           <li className="flex items-start gap-3">
             <Cloud className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
             <span>
-              <b className="text-white/90">Google Drive as phone storage</b> - files upload straight to
-              your Drive account (5 TB plans fully supported).
+              <b className="text-white/90">Google Drive as phone storage</b> - files upload straight
+              to your Drive account; the quota shown is read live from your plan.
             </span>
           </li>
           <li className="flex items-start gap-3">
             <FolderOpen className="mt-0.5 h-4 w-4 shrink-0 text-teal-300" />
             <span>
               <b className="text-white/90">Real file manager</b> - upload, download, rename, delete,
-              create folders; browse photos, play music, take camera shots.
+              create folders; browse photos, play music, take webcam shots.
             </span>
           </li>
           <li className="flex items-start gap-3">
@@ -93,7 +93,8 @@ export default function Home() {
         <div className="mt-7 rounded-2xl bg-white/[0.05] p-4 text-[11.5px] leading-relaxed text-white/45 ring-1 ring-white/10">
           <b className="text-white/70">First step:</b> open <b className="text-emerald-300">Settings</b> on
           the phone and connect your Google Drive. Setup takes about two minutes with a free OAuth
-          Client ID from Google Cloud Console - guided steps are built into the Settings app.
+          Client ID from Google Cloud Console - guided steps are built into the Settings app. Phone
+          and Messages apps are simulations; this is a web UI, not an Android OS emulator.
         </div>
       </aside>
 

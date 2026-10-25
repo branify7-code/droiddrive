@@ -15,10 +15,34 @@ model VFile {
   parentId  String?
   size      Int      @default(0)
   blobPath  String?
+  ownerId   String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   parent    VFile?   @relation("FileTree", fields: [parentId], references: [id], onDelete: Cascade)
   children  VFile[]  @relation("FileTree")
+  owner     LocalUser? @relation("Owner", fields: [ownerId], references: [id], onDelete: SetNull)
 
   @@index([parentId])
+  @@index([ownerId])
+}
+
+/// Local account for the server-side (local) storage backend.
+/// Google Drive mode authenticates directly with Google and does not use this.
+model LocalUser {
+  id           String         @id @default(cuid())
+  username     String         @unique
+  passwordHash String
+  createdAt    DateTime       @default(now())
+  sessions     LocalSession[]
+  files        VFile[]        @relation("Owner")
+}
+
+model LocalSession {
+  token     String     @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime   @default(now())
+  user      LocalUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

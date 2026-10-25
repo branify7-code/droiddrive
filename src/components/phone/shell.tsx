@@ -541,10 +541,12 @@ export function PhoneDialog({
 
 export function AppHeader({
   title,
+  subtitle,
   onBack,
   right,
 }: {
   title: string;
+  subtitle?: string;
   onBack: () => void;
   right?: React.ReactNode;
 }) {
@@ -557,7 +559,10 @@ export function AppHeader({
       >
         <ChevronLeft className="h-5 w-5 text-white/85" />
       </button>
-      <h1 className="flex-1 truncate text-lg font-semibold text-white">{title}</h1>
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate text-lg font-semibold text-white">{title}</h1>
+        {subtitle && <p className="truncate text-[10px] font-medium text-white/40">{subtitle}</p>}
+      </div>
       {right}
     </header>
   );

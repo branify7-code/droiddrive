@@ -22,9 +22,9 @@ import {
   X,
   RefreshCw,
 } from "lucide-react";
-import { usePhone } from "@/lib/phone-store";
+import { usePhone, accountGen } from "@/lib/phone-store";
 import { formatBytes, formatDate, fileKindOf } from "@/lib/format";
-import type { StorageItem } from "@/lib/storage/types";
+import type { StorageItem, QuotaInfo } from "@/lib/storage/types";
 import { AppHeader, PhoneDialog, PhoneToast } from "../shell";
 
 interface Crumb {
@@ -39,11 +39,12 @@ export default function FilesApp() {
   const driveQuota = usePhone((s) => s.driveQuota);
   const openApp = usePhone((s) => s.openApp);
   const showToast = usePhone((s) => s.showToast);
+  const storageEpoch = usePhone((s) => s.storageEpoch);
 
   const [path, setPath] = useState<Crumb[]>([{ id: "root", name: "My Files" }]);
   const [items, setItems] = useState<StorageItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [quota, setQuota] = useState<{ usage: number; limit: number; label: string } | null>(null);
+  const [quota, setQuota] = useState<QuotaInfo | null>(null);
   const [uploadPct, setUploadPct] = useState<number | null>(null);
   const [menuFor, setMenuFor] = useState<StorageItem | null>(null);
   const [dialog, setDialog] = useState<null | { type: "newFolder" | "rename" | "delete"; item?: StorageItem }>(null);
@@ -54,23 +55,26 @@ export default function FilesApp() {
   const current = path[path.length - 1];
 
   const refresh = useCallback(async () => {
+    const gen = accountGen();
     setLoading(true);
     try {
       const provider = getProvider();
       const list = await provider.list(current.id);
-      setItems(list);
       const q = await provider.quota();
+      if (gen !== accountGen()) return; // account changed mid-flight — discard
+      setItems(list);
       setQuota(q);
     } catch (e) {
+      if (gen !== accountGen()) return;
       showToast(e instanceof Error ? e.message : "Failed to load files");
     } finally {
-      setLoading(false);
+      if (gen === accountGen()) setLoading(false);
     }
   }, [current.id, getProvider, showToast]);
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+  }, [refresh, storageEpoch]);
 
   const openItem = async (item: StorageItem) => {
     if (item.isFolder) {
@@ -162,14 +166,27 @@ export default function FilesApp() {
   };
 
   const storageUsed = () => {
-    if (quota) return { used: quota.usage, limit: quota.limit, label: quota.label };
+    if (quota)
+      return {
+        used: quota.usage,
+        limit: quota.limit,
+        label: quota.label,
+        unlimited: quota.unlimited ?? false,
+        usageInDrive: quota.usageInDrive,
+      };
     if (storageMode === "drive" && driveQuota)
-      return { used: driveQuota.usage, limit: driveQuota.limit, label: "Google Drive" };
+      return {
+        used: driveQuota.usage,
+        limit: driveQuota.limit,
+        label: "Google Drive",
+        unlimited: driveQuota.unlimited ?? false,
+        usageInDrive: driveQuota.usageInDrive,
+      };
     return null;
   };
 
   const used = storageUsed();
-  const pct = used && used.limit > 0 ? Math.min(100, (used.used / used.limit) * 100) : 0;
+  const pct = used && !used.unlimited && used.limit > 0 ? Math.min(100, (used.used / used.limit) * 100) : 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -204,16 +221,30 @@ export default function FilesApp() {
           </span>
           {used && (
             <span className="text-white/55">
-              {formatBytes(used.used)} / {formatBytes(used.limit)}
+              {used.unlimited
+                ? `${formatBytes(used.used)} used`
+                : `${formatBytes(used.used)} / ${formatBytes(used.limit)}`}
             </span>
           )}
         </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-          <div
-            className={`h-full rounded-full ${storageMode === "drive" ? "bg-emerald-400" : "bg-teal-400"}`}
-            style={{ width: `${Math.max(pct, 2)}%` }}
-          />
-        </div>
+        {used && !used.unlimited && (
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div
+              className={`h-full rounded-full ${storageMode === "drive" ? "bg-emerald-400" : "bg-teal-400"}`}
+              style={{ width: `${Math.max(pct, 2)}%` }}
+            />
+          </div>
+        )}
+        {used && used.unlimited && (
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
+            <div className={`h-full w-full rounded-full ${storageMode === "drive" ? "bg-emerald-400/40" : "bg-teal-400/40"}`} />
+          </div>
+        )}
+        {storageMode === "drive" && used && (
+          <p className="mt-1.5 text-[10px] text-white/35">
+            Google account usage - Drive files use {formatBytes(used.usageInDrive ?? used.used)}
+          </p>
+        )}
         {storageMode === "local" && (
           <button
             onClick={() => openApp("settings")}

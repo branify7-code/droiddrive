@@ -1,27 +1,41 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { validateFileName } from "@/lib/auth";
+import { requireUser, badRequest, notFound } from "@/lib/storage/server";
 
 export const dynamic = "force-dynamic";
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
+  const auth = await requireUser(req);
+  if (auth.res) return auth.res;
+  const userId = auth.user.id;
+
   const body = await req.json().catch(() => null);
-  const name = body?.name?.trim();
+  const name = validateFileName(body?.name);
   const folderId = body?.folderId || "root";
 
   if (!name) {
-    return NextResponse.json({ error: "Folder name required" }, { status: 400 });
+    return badRequest("Invalid folder name");
   }
 
   const parentId = folderId === "root" ? null : folderId;
   if (parentId) {
-    const parent = await db.vFile.findUnique({ where: { id: parentId } });
+    const parent = await db.vFile.findFirst({
+      where: { id: parentId, ownerId: userId },
+    });
     if (!parent || !parent.isFolder) {
-      return NextResponse.json({ error: "Parent folder not found" }, { status: 404 });
+      return notFound("Parent folder not found");
     }
   }
 
   const row = await db.vFile.create({
-    data: { name, mime: "application/vnd.droiddrive.folder", isFolder: true, parentId },
+    data: {
+      name,
+      mime: "application/vnd.droiddrive.folder",
+      isFolder: true,
+      parentId,
+      ownerId: userId,
+    },
   });
 
   return NextResponse.json({

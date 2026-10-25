@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Play, Pause, Music2, SkipBack, SkipForward, Loader2 } from "lucide-react";
-import { usePhone } from "@/lib/phone-store";
+import { usePhone, accountGen } from "@/lib/phone-store";
 import { formatBytes, twoDigits } from "@/lib/format";
 import type { StorageItem } from "@/lib/storage/types";
 import { walkAll } from "@/lib/storage/drive";
@@ -11,6 +11,7 @@ import { AppHeader } from "../shell";
 export default function MusicApp() {
   const getProvider = usePhone((s) => s.getProvider);
   const showToast = usePhone((s) => s.showToast);
+  const storageEpoch = usePhone((s) => s.storageEpoch);
 
   const [tracks, setTracks] = useState<StorageItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,21 +25,27 @@ export default function MusicApp() {
   const objectUrlRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
+    const gen = accountGen();
     setLoading(true);
     try {
       const provider = getProvider();
-      const all = await walkAll(provider, provider.rootId);
+      const all = await walkAll(provider, provider.rootId, {
+        onTruncated: () =>
+          showToast("Some deep folders were skipped (6-level traversal limit)"),
+      });
+      if (gen !== accountGen()) return; // account switched mid-walk — discard
       setTracks(all.filter((f) => f.mimeType.startsWith("audio/")).sort((a, b) => a.name.localeCompare(b.name)));
     } catch (e) {
+      if (gen !== accountGen()) return;
       showToast(e instanceof Error ? e.message : "Failed to load music");
     } finally {
-      setLoading(false);
+      if (gen === accountGen()) setLoading(false);
     }
   }, [getProvider, showToast]);
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, storageEpoch]);
 
   const playTrack = async (track: StorageItem) => {
     try {
