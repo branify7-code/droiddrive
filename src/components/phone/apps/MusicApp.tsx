@@ -92,7 +92,7 @@ export default function MusicApp() {
       audio.removeEventListener("loadedmetadata", onMeta);
       audio.removeEventListener("ended", onEnd);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [audioRef.current, tracks, current]);
 
   const fmtTime = (s: number) => `${Math.floor(s / 60)}:${twoDigits(Math.floor(s % 60))}`;

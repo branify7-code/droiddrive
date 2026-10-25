@@ -5,6 +5,37 @@ import { Delete } from "lucide-react";
 
 type Op = "+" | "-" | "×" | "÷" | null;
 
+function Btn({
+  label,
+  onClick,
+  variant = "num",
+  className = "",
+  icon,
+}: {
+  label: string;
+  onClick: () => void;
+  variant?: "num" | "op" | "fn" | "eq";
+  className?: string;
+  icon?: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex h-[52px] items-center justify-center rounded-2xl text-lg font-medium transition active:scale-95 ${
+        variant === "num"
+          ? "bg-white/[0.09] text-white hover:bg-white/[0.14]"
+          : variant === "op"
+            ? "bg-emerald-500/85 text-white hover:bg-emerald-500"
+            : variant === "eq"
+              ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 hover:bg-emerald-400"
+              : "bg-white/[0.05] text-emerald-300 hover:bg-white/10"
+      } ${className}`}
+    >
+      {icon ?? label}
+    </button>
+  );
+}
+
 export default function CalculatorApp() {
   const [display, setDisplay] = useState("0");
   const [acc, setAcc] = useState<number | null>(null);
@@ -79,35 +110,6 @@ export default function CalculatorApp() {
     setDisplay(display.length <= 1 || (display.length === 2 && display.startsWith("-")) ? "0" : display.slice(0, -1));
   };
 
-  const Btn = ({
-    label,
-    onClick,
-    variant = "num",
-    className = "",
-    icon,
-  }: {
-    label: string;
-    onClick: () => void;
-    variant?: "num" | "op" | "fn" | "eq";
-    className?: string;
-    icon?: React.ReactNode;
-  }) => (
-    <button
-      onClick={onClick}
-      className={`flex h-[52px] items-center justify-center rounded-2xl text-lg font-medium transition active:scale-95 ${
-        variant === "num"
-          ? "bg-white/[0.09] text-white hover:bg-white/[0.14]"
-          : variant === "op"
-            ? "bg-emerald-500/85 text-white hover:bg-emerald-500"
-            : variant === "eq"
-              ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/25 hover:bg-emerald-400"
-              : "bg-white/[0.05] text-emerald-300 hover:bg-white/10"
-      } ${className}`}
-    >
-      {icon ?? label}
-    </button>
-  );
-
   return (
     <div className="flex h-full flex-col px-4 pb-16 pt-12">
       <div className="mb-4 mt-2 flex flex-1 flex-col items-end justify-end px-1">
@@ -133,12 +135,12 @@ export default function CalculatorApp() {
         <Btn label="1" onClick={() => inputDigit("1")} />
         <Btn label="2" onClick={() => inputDigit("2")} />
         <Btn label="3" onClick={() => inputDigit("3")} />
-        <Btn label="=" variant="eq" onClick={equals} className="row-span-1" />
+        <Btn label="=" variant="eq" onClick={equals} />
 
         <Btn label="±" onClick={() => setDisplay(display.startsWith("-") ? display.slice(1) : display === "0" ? "0" : "-" + display)} />
         <Btn label="0" onClick={() => inputDigit("0")} />
         <Btn label="." onClick={() => inputDigit(".")} />
-        <Btn label="" onClick={() => {}} className="opacity-0 pointer-events-none" />
+        <Btn label="" onClick={() => {}} className="pointer-events-none opacity-0" />
       </div>
     </div>
   );

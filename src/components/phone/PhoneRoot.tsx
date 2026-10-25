@@ -26,7 +26,7 @@ export default function PhoneRoot() {
   /* attempt silent Drive reconnect (if a Client ID was saved before) */
   useEffect(() => {
     trySilentReconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   /* keyboard: Escape acts as back */
@@ -46,7 +46,7 @@ export default function PhoneRoot() {
       <Wallpaper />
 
       {/* punch-hole camera */}
-      <div className="absolute left-1/2 top-2.5 z-[75] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-black ring-1 ring-white/15">
+      <div className="pointer-events-none absolute left-1/2 top-2.5 z-[75] h-3.5 w-3.5 -translate-x-1/2 rounded-full bg-black ring-1 ring-white/15">
         <div className="absolute inset-[3px] rounded-full bg-zinc-900" />
       </div>
 

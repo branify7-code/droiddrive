@@ -14,24 +14,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Z.ai Code Scaffold - AI-Powered Development",
-  description: "Modern Next.js scaffold optimized for AI-powered development with Z.ai. Built with TypeScript, Tailwind CSS, and shadcn/ui.",
-  keywords: ["Z.ai", "Next.js", "TypeScript", "Tailwind CSS", "shadcn/ui", "AI development", "React"],
-  authors: [{ name: "Z.ai Team" }],
+  title: "DroidDrive - Virtual Android Phone with Google Drive Storage",
+  description:
+    "A virtual Android phone in your browser with Google Drive as phone storage. Upload files, manage photos, play music, and use your cloud quota (5 TB plans supported) as internal storage.",
+  keywords: ["virtual phone", "Android simulator", "Google Drive storage", "cloud phone", "web file manager"],
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
   openGraph: {
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
-    url: "https://chat.z.ai",
-    siteName: "Z.ai",
+    title: "DroidDrive - Virtual Android Phone",
+    description: "Google Drive as your phone storage - right in the browser",
+    siteName: "DroidDrive",
     type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Z.ai Code Scaffold",
-    description: "AI-powered development with modern React stack",
   },
 };
 

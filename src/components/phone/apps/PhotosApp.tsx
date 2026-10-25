@@ -91,7 +91,7 @@ export default function PhotosApp() {
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [viewer]);
 
   const handleUpload = async (files: FileList | null) => {
@@ -190,7 +190,7 @@ export default function PhotosApp() {
                 className="group relative aspect-square overflow-hidden bg-white/5"
               >
                 {urls[img.id] ? (
-                  // eslint-disable-next-line @next/next/no-img-element
+                   
                   <img src={urls[img.id]} alt={img.name} className="h-full w-full object-cover transition group-hover:scale-105" />
                 ) : (
                   <div className="h-full w-full animate-pulse bg-white/10" />
@@ -224,7 +224,7 @@ export default function PhotosApp() {
           </div>
           <div className="flex flex-1 items-center justify-center px-4 pb-10">
             {viewerSrc ? (
-              // eslint-disable-next-line @next/next/no-img-element
+               
               <img src={viewerSrc} alt={viewer.name} className="max-h-full max-w-full rounded-xl object-contain" />
             ) : (
               <div className="h-40 w-40 animate-pulse rounded-2xl bg-white/10" />

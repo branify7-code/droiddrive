@@ -447,7 +447,7 @@ export default function FilesApp() {
                 {preview.text}
               </pre>
             ) : (
-              // eslint-disable-next-line @next/next/no-img-element
+               
               <img src={preview.url} alt={preview.item.name} className="max-h-full max-w-full rounded-xl object-contain" />
             )}
           </div>
