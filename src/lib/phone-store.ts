@@ -21,8 +21,55 @@ import {
   PREFS_FILE_NAME,
   type PhonePrefs,
 } from "@/lib/prefs";
+import {
+  loadAppsFromProvider,
+  saveAppsToProvider,
+  loadLocalApps,
+  saveLocalApps,
+  clearLocalApps,
+  installAppInProvider,
+  uninstallAppFromProvider,
+  appsFromList,
+  APPS_FILE_NAME,
+  defaultAppsManifest,
+  type InstalledApp,
+} from "@/lib/apps-registry";
+import type { ApkInfo } from "@/lib/apk";
 
 const CLIENT_ID_KEY = "droiddrive_client_id";
+/**
+ * Set once a Drive session has been successfully established in this browser.
+ * Boot-time silent reconnect only runs when this exists — without it, GIS may
+ * hijack the page with a full-window Google sign-in redirect on first visit
+ * (popup-less environments fall back to top-level navigation).
+ */
+const DRIVE_CONNECTED_FLAG = "droiddrive.drive.connected";
+
+function markDriveConnected(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(DRIVE_CONNECTED_FLAG, "1");
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+function hadDriveSession(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(DRIVE_CONNECTED_FLAG) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The user's Google OAuth Client ID (a PUBLIC identifier — safe to embed).
+ * Provided 2026-10-25 for project "droiddrive". The OAuth client secret is
+ * NOT used anywhere in this app and must never be committed.
+ */
+export const DEFAULT_DRIVE_CLIENT_ID =
+  "457622455310-1gahsvld0o70km0mm80ipn3iavuhpt6g.apps.googleusercontent.com";
 
 /**
  * Monotonic counter bumped whenever the storage account/context changes
@@ -90,6 +137,14 @@ interface PhoneState {
   /** True when the saved prefs JSON failed validation (auto-save suspended). */
   prefsCorrupted: boolean;
 
+  /* --- installed apps (APK manager) --- */
+  installedApps: InstalledApp[];
+  appsReady: boolean;
+  /** True when the saved apps JSON failed validation (auto-save suspended). */
+  appsCorrupted: boolean;
+  /** packageName of the installed app whose info dialog is open (or null). */
+  appInfoFor: string | null;
+
   /* --- actions --- */
   finishBoot: () => void;
   lock: () => void;
@@ -126,6 +181,19 @@ interface PhoneState {
   hydratePrefs: () => Promise<void>;
   savePrefsSoon: () => void;
   resetCorruptedPrefs: () => Promise<void>;
+
+  /* --- installed apps (APK manager) actions --- */
+  hydrateApps: () => Promise<void>;
+  installApk: (opts: {
+    blob: Blob;
+    fileName: string;
+    info: ApkInfo;
+    existingFileId?: string;
+    onProgress?: (loaded: number, total: number) => void;
+  }) => Promise<InstalledApp>;
+  uninstallApp: (packageName: string, alsoDeleteApk: boolean) => Promise<void>;
+  resetCorruptedApps: () => Promise<void>;
+  setAppInfoFor: (packageName: string | null) => void;
 }
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -148,7 +216,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
   toast: null,
 
   storageMode: "local",
-  driveClientId: "",
+  driveClientId: DEFAULT_DRIVE_CLIENT_ID,
   driveToken: null,
   driveExpiry: 0,
   driveRootId: null,
@@ -163,6 +231,11 @@ export const usePhone = create<PhoneState>((set, get) => ({
 
   prefsReady: false,
   prefsCorrupted: false,
+
+  installedApps: [],
+  appsReady: false,
+  appsCorrupted: false,
+  appInfoFor: null,
 
   finishBoot: () => set({ booting: false }),
   lock: () => set({ locked: true, activeApp: null, drawerOpen: false, shadeOpen: false, recentsOpen: false }),
@@ -195,6 +268,8 @@ export const usePhone = create<PhoneState>((set, get) => ({
   setDrawerOpen: (v) => set({ drawerOpen: v, shadeOpen: false, recentsOpen: false }),
   setShadeOpen: (v) => set({ shadeOpen: v, drawerOpen: false, recentsOpen: false }),
   setRecentsOpen: (v) => set({ recentsOpen: v, drawerOpen: false, shadeOpen: false }),
+  setAppInfoFor: (packageName) => set({ appInfoFor: packageName }),
+
   setBrightness: (v) => {
     set({ brightness: Math.max(20, Math.min(100, v)) });
     get().savePrefsSoon();
@@ -244,7 +319,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
   },
 
   connectDrive: async (clientIdInput) => {
-    const cid = (clientIdInput ?? get().driveClientId ?? "").trim();
+    const cid = (clientIdInput ?? get().driveClientId ?? "").trim() || DEFAULT_DRIVE_CLIENT_ID;
     if (!cid) throw new Error("Enter your Google OAuth Client ID first");
     set({ driveConnecting: true });
     try {
@@ -266,6 +341,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
         prefsCorrupted: false,
       });
       persistClientId(cid);
+      markDriveConnected();
       const q = about.quota;
       get().showToast(
         q.unlimited
@@ -281,7 +357,11 @@ export const usePhone = create<PhoneState>((set, get) => ({
   trySilentReconnect: async () => {
     const s = get();
     if (s.storageMode === "drive" && s.isDriveTokenValid()) return;
-    const cid = s.driveClientId || (typeof window !== "undefined" ? window.localStorage.getItem(CLIENT_ID_KEY) : "") || "";
+    const cid = s.driveClientId || (typeof window !== "undefined" ? window.localStorage.getItem(CLIENT_ID_KEY) : "") || DEFAULT_DRIVE_CLIENT_ID;
+    // Boot-time safety: only touch GIS if this browser connected before.
+    // A first visit must never fire a token request — in popup-less
+    // environments GIS redirects the WHOLE page to accounts.google.com.
+    if (!hadDriveSession()) return;
     if (!cid) return;
     set({ driveConnecting: true });
     try {
@@ -302,6 +382,7 @@ export const usePhone = create<PhoneState>((set, get) => ({
         prefsReady: false,
         prefsCorrupted: false,
       });
+      markDriveConnected();
       void get().hydratePrefs();
     } catch {
       // Silent reconnect failed — stay in local mode until the user connects manually
@@ -318,6 +399,13 @@ export const usePhone = create<PhoneState>((set, get) => ({
    */
   disconnectDrive: () => {
     bumpAccountGen();
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(DRIVE_CONNECTED_FLAG);
+      } catch {
+        /* ignore */
+      }
+    }
     set({
       storageMode: "local",
       driveToken: null,
@@ -369,6 +457,9 @@ export const usePhone = create<PhoneState>((set, get) => ({
 
   hydratePrefs: async () => {
     const s = get();
+    // Installed-app registry hydrates in lockstep with prefs (same triggers:
+    // boot, Drive connect, silent reconnect, switch to local).
+    void get().hydrateApps();
     try {
       if (s.storageMode === "drive") {
         if (!s.driveToken || !s.driveRootId) {
@@ -472,7 +563,142 @@ export const usePhone = create<PhoneState>((set, get) => ({
       get().showToast(e instanceof Error ? e.message : "Could not reset settings");
     }
   },
+
+  /* ---------- installed apps (APK manager) ---------- */
+
+  hydrateApps: async () => {
+    const s = get();
+    try {
+      if (s.storageMode === "drive") {
+        if (!s.driveToken || !s.driveRootId) {
+          set({ appsReady: true });
+          return;
+        }
+        const provider = new DriveProvider(s.driveToken, s.driveRootId);
+        const r = await loadAppsFromProvider(provider);
+        if (r.corrupted) {
+          set({ appsCorrupted: true, appsReady: true, installedApps: [] });
+          get().showToast("Installed-apps file is corrupted - app list cleared (original kept)");
+          return;
+        }
+        set({
+          appsCorrupted: false,
+          appsReady: true,
+          installedApps: r.manifest ? r.manifest.apps : [],
+        });
+      } else {
+        const r = loadLocalApps();
+        if (r.corrupted) {
+          set({ appsCorrupted: true, appsReady: true, installedApps: [] });
+          get().showToast("Saved app list is corrupted - apps cleared (original kept)");
+          return;
+        }
+        set({
+          appsCorrupted: false,
+          appsReady: true,
+          installedApps: r.manifest ? r.manifest.apps : [],
+        });
+      }
+    } catch {
+      // App registry is non-critical — never block the phone on it.
+      set({ appsReady: true });
+    }
+  },
+
+  installApk: async (opts) => {
+    const s = get();
+    const provider = s.getProvider();
+    const { app } = await installAppInProvider(provider, opts);
+    const next = upsertLocal(s.installedApps, app);
+    set({ installedApps: next });
+    try {
+      await persistApps(get, provider, next);
+    } catch (e) {
+      get().showToast(
+        e instanceof Error ? e.message : "App installed, but the app list could not be saved"
+      );
+    }
+    return app;
+  },
+
+  uninstallApp: async (packageName, alsoDeleteApk) => {
+    const s = get();
+    const provider = s.getProvider();
+    const next = await uninstallAppFromProvider(provider, s.installedApps, packageName, alsoDeleteApk);
+    set({ installedApps: next, appInfoFor: s.appInfoFor === packageName ? null : s.appInfoFor });
+    try {
+      await persistApps(get, provider, next);
+    } catch (e) {
+      get().showToast(
+        e instanceof Error ? e.message : "App removed, but the app list could not be saved"
+      );
+    }
+  },
+
+  /**
+   * User-initiated recovery from a corrupted installed-apps file.
+   * Drive mode archives the corrupt file first (never silently lost).
+   */
+  resetCorruptedApps: async () => {
+    const s = get();
+    try {
+      if (s.storageMode === "drive") {
+        if (!s.driveToken || !s.driveRootId) return;
+        const provider = new DriveProvider(s.driveToken, s.driveRootId);
+        const items = await provider.list(provider.rootId);
+        const file = items.find((i) => !i.isFolder && i.name === APPS_FILE_NAME);
+        if (file) {
+          try {
+            const raw = await (await provider.download(file.id)).text();
+            const backupName = APPS_FILE_NAME.replace(/\.json$/, "") + `.corrupt-${Date.now()}.json`;
+            await provider.upload(
+              provider.rootId,
+              new Blob([raw], { type: "application/json" }),
+              { name: backupName }
+            );
+          } catch {
+            get().showToast("Could not archive the corrupted file - nothing was overwritten");
+            return;
+          }
+          await saveAppsToProvider(provider, defaultAppsManifest());
+        }
+        set({ appsCorrupted: false, appsReady: true, installedApps: [] });
+        get().showToast("Corrupted app list archived and replaced");
+      } else {
+        clearLocalApps();
+        set({ appsCorrupted: false, appsReady: true, installedApps: [] });
+        get().showToast("Corrupted app list cleared - starting fresh");
+      }
+    } catch (e) {
+      get().showToast(e instanceof Error ? e.message : "Could not reset app list");
+    }
+  },
 }));
+
+/* ---------- installed-apps helpers ---------- */
+
+function upsertLocal(apps: InstalledApp[], app: InstalledApp): InstalledApp[] {
+  const idx = apps.findIndex((a) => a.packageName === app.packageName);
+  if (idx === -1) return [...apps, app];
+  const next = apps.slice();
+  next[idx] = app;
+  return next;
+}
+
+async function persistApps(
+  get: () => PhoneState,
+  provider: StorageProvider,
+  apps: InstalledApp[]
+): Promise<void> {
+  const cur = get();
+  if (cur.appsCorrupted) return; // suspended like prefs auto-save
+  const manifest = appsFromList(apps);
+  if (cur.storageMode === "drive") {
+    await saveAppsToProvider(provider, manifest);
+  } else {
+    saveLocalApps(manifest);
+  }
+}
 
 /* ---------- global handlers wired to providers ---------- */
 

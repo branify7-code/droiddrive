@@ -7,6 +7,8 @@ import { usePhone } from "@/lib/phone-store";
 import { formatBytes } from "@/lib/format";
 import { APPS } from "./apps/registry";
 import type { AppDef } from "./apps/registry";
+import { AppAvatar } from "./apps/PlayStoreApp";
+import type { InstalledApp } from "@/lib/apps-registry";
 import { useNow, fmtTime, fmtDate } from "./shell";
 
 /* ---------- app icon ---------- */
@@ -20,6 +22,26 @@ export function AppIcon({ app, onClick, showLabel = true }: { app: AppDef; onCli
         <app.icon className="h-6 w-6 text-white drop-shadow" />
       </span>
       {showLabel && <span className="text-[10.5px] font-medium text-white/90 drop-shadow">{app.name}</span>}
+    </button>
+  );
+}
+
+/* ---------- installed-app icon (APK manager) ---------- */
+
+export function InstalledAppIcon({ app }: { app: InstalledApp }) {
+  const setAppInfoFor = usePhone((s) => s.setAppInfoFor);
+  return (
+    <button
+      onClick={() => setAppInfoFor(app.packageName)}
+      className="group flex flex-col items-center gap-1.5"
+      aria-label={`App info for ${app.label}`}
+    >
+      <span className="transition group-hover:brightness-110 group-active:scale-90">
+        <AppAvatar app={app} size={56} />
+      </span>
+      <span className="max-w-[72px] truncate text-[10.5px] font-medium text-white/90 drop-shadow">
+        {app.label}
+      </span>
     </button>
   );
 }
@@ -79,6 +101,7 @@ function StorageLine() {
 export function HomeScreen() {
   const openApp = usePhone((s) => s.openApp);
   const setDrawerOpen = usePhone((s) => s.setDrawerOpen);
+  const installedApps = usePhone((s) => s.installedApps);
   const now = useNow(5000);
 
   const homeApps = useMemo(() => APPS.filter((a) => a.home), []);
@@ -110,7 +133,7 @@ export function HomeScreen() {
         </div>
       </motion.div>
 
-      {/* app grid */}
+      {/* app grid (system apps, then APK-installed apps) */}
       <div className="mt-5 grid grid-cols-4 gap-x-2 gap-y-5 px-4">
         {homeApps.map((app, i) => (
           <motion.div
@@ -121,6 +144,17 @@ export function HomeScreen() {
             className="flex justify-center"
           >
             <AppIcon app={app} onClick={() => openApp(app.id)} />
+          </motion.div>
+        ))}
+        {installedApps.slice(0, 8).map((app) => (
+          <motion.div
+            key={app.packageName}
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.35 }}
+            className="flex justify-center"
+          >
+            <InstalledAppIcon app={app} />
           </motion.div>
         ))}
       </div>
@@ -152,9 +186,14 @@ export function AppDrawer() {
   const drawerOpen = usePhone((s) => s.drawerOpen);
   const setDrawerOpen = usePhone((s) => s.setDrawerOpen);
   const openApp = usePhone((s) => s.openApp);
+  const installedApps = usePhone((s) => s.installedApps);
   const [query, setQuery] = useState("");
 
-  const filtered = APPS.filter((a) => a.name.toLowerCase().includes(query.toLowerCase()));
+  const q = query.toLowerCase();
+  const filtered = APPS.filter((a) => a.name.toLowerCase().includes(q));
+  const filteredInstalled = installedApps.filter(
+    (a) => a.label.toLowerCase().includes(q) || a.packageName.toLowerCase().includes(q)
+  );
 
   return (
     <AnimatePresence>
@@ -201,9 +240,25 @@ export function AppDrawer() {
                 />
               </motion.div>
             ))}
-            {filtered.length === 0 && (
+            {filtered.length === 0 && filteredInstalled.length === 0 && (
               <p className="col-span-4 pt-10 text-center text-xs text-white/40">No apps match your search</p>
             )}
+            {filteredInstalled.length > 0 && (
+              <p className="col-span-4 px-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-white/35">
+                Installed apps
+              </p>
+            )}
+            {filteredInstalled.map((app) => (
+              <motion.div
+                key={app.packageName}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.03 }}
+                className="flex justify-center"
+              >
+                <InstalledAppIcon app={app} />
+              </motion.div>
+            ))}
           </div>
 
           <button

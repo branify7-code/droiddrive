@@ -16,6 +16,7 @@ import {
 } from "./shell";
 import { HomeScreen, AppDrawer } from "./HomeScreen";
 import LocalAuthDialog from "./LocalAuthDialog";
+import InstalledAppDialog from "./InstalledAppDialog";
 
 export default function PhoneRoot() {
   const booting = usePhone((s) => s.booting);
@@ -101,6 +102,9 @@ export default function PhoneRoot() {
 
       {/* local storage sign-in (server API returned 401) */}
       <LocalAuthDialog />
+
+      {/* APK-installed app info (opened from launcher / drawer / My apps) */}
+      <InstalledAppDialog />
 
       {/* lock screen */}
       <AnimatePresence>{!booting && locked && <LockScreen key="lock" />}</AnimatePresence>

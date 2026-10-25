@@ -60,3 +60,6 @@ server.log
 
 # scratch
 /tmp/
+
+# user uploads / credentials (never commit secrets)
+/upload/

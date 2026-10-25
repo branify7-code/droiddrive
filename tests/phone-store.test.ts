@@ -5,7 +5,7 @@
  * isolation. Run: bun test tests/phone-store.test.ts
  */
 import { describe, test, expect, beforeEach } from "bun:test";
-import { usePhone, accountGen, bumpAccountGen } from "@/lib/phone-store";
+import { usePhone, accountGen, bumpAccountGen, DEFAULT_DRIVE_CLIENT_ID } from "@/lib/phone-store";
 import { DriveSessionExpiredError } from "@/lib/storage/types";
 import { LocalProvider } from "@/lib/storage/local";
 import { DriveProvider } from "@/lib/storage/drive";
@@ -102,10 +102,26 @@ describe("account switching / stale request isolation", () => {
     expect(accountGen()).toBeGreaterThan(genBefore);
   });
 
-  test("connectDrive without a Client ID fails before any network call", async () => {
+  test("connectDrive falls back to the baked-in default Client ID (no consent in tests, so it fails later)", async () => {
     usePhone.setState({ driveClientId: "" });
-    await expect(usePhone.getState().connectDrive()).rejects.toThrow(
-      "Enter your Google OAuth Client ID first"
-    );
+    // The default Client ID is baked in, so the OLD "no Client ID" validation
+    // error must never occur — in a non-browser runtime the GIS call itself
+    // fails instead (no popup/token), which is expected here.
+    let message = "";
+    try {
+      await usePhone.getState().connectDrive();
+    } catch (e) {
+      message = e instanceof Error ? e.message : String(e);
+    }
+    expect(message).not.toBe("Enter your Google OAuth Client ID first");
+    expect(message.length).toBeGreaterThan(0);
+  });
+
+  test("default Client ID is a valid public OAuth client identifier", () => {
+    expect(DEFAULT_DRIVE_CLIENT_ID).toMatch(/^[0-9a-z-]+\.apps\.googleusercontent\.com$/);
+    expect(DEFAULT_DRIVE_CLIENT_ID).not.toMatch(/secret/i);
+    // Fresh store state carries the default so Settings is pre-filled.
+    usePhone.setState({ driveClientId: DEFAULT_DRIVE_CLIENT_ID });
+    expect(usePhone.getState().driveClientId).toBe(DEFAULT_DRIVE_CLIENT_ID);
   });
 });

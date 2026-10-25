@@ -4,19 +4,26 @@ A fully interactive **virtual phone interface that runs in your desktop browser*
 
 Everything you save on the phone (files, photos, camera shots, notes) is stored in a `PhoneStorage` folder inside your real Google Drive, counted against your actual plan quota. Without Drive connected, the phone falls back to a **per-account, session-authenticated** local virtual storage (256 GB cap) backed by SQLite.
 
-> **What this is NOT:** DroidDrive is a web UI simulation. It does not run the Android OS, does not execute native APK apps, and its Phone (dialer) and Messages apps are clearly-labeled simulations — no real cellular calls or SMS. The Camera app uses your real webcam.
+> **What this is NOT:** DroidDrive is a web UI simulation. It does not run the Android OS and **installed APK apps do not execute** (a browser tab has no Android system — APKs are parsed, stored and managed, not run). The Phone (dialer) and Messages apps are clearly-labeled simulations — no real cellular calls or SMS. The Camera app uses your real webcam.
 
 ## Features
 
 - **Phone-style system UI**: boot animation, swipe-to-unlock lock screen, home screen with widgets, app drawer with search, notification shade with quick settings, brightness control, recents, 3-button navigation, toasts and dialogs
-- **10 working apps**:
-  - **Files** — folder tree, upload with progress, download, rename, delete, text/image preview, storage quota card
+- **11 working apps**:
+  - **Files** — folder tree, upload with progress, download, rename, delete, text/image preview, storage quota card. **Tapping an `.apk` opens the installer**
+  - **Play Store (simulation)** — APK sideloading pipeline + open-source catalog
   - **Photos** — recursive gallery grid, full-screen viewer, upload/delete
   - **Camera** — live webcam preview (getUserMedia), front/back switch, saves JPEG to `Pictures`; media tracks are released when the app closes
-  - **Settings** — Drive connect wizard, local storage account, expired-session recovery
+  - **Settings** — Drive connect wizard, local storage account, expired-session recovery, app manager
   - **Notes** — real text files in the `Notes` folder (Drive files, not a proprietary store)
   - **Music** — finds audio files on the phone storage and plays them
   - **Calculator**, **Clock** (analog + stopwatch), **Phone** (simulation), **Messages** (simulation)
+- **APK installer & app manager (real parsing, honest execution limits)**:
+  - Real Android binary manifest parsing (`AndroidManifest.xml` + `resources.arsc`): app label, package name, `versionName`/`versionCode`, min/target SDK, requested permissions, and the launcher icon — extracted from the actual APK file
+  - Installed apps get home-screen/drawer icons with the real icon, an App-info dialog (version, SDK levels, permission list), uninstall (optionally deleting the APK file), and reinstall/upgrade by package name
+  - APK blobs are stored like any phone file: a `APKs` folder on the active provider (Drive when connected), referenced by file id in a versioned `droiddrive-installed-apps.json` manifest that follows the storage account
+  - Apps persist across reloads and follow the Drive account across browsers, exactly like preferences
+  - **Honest limits (shown in the UI)**: installed apps never execute — there is no Android runtime in a browser; and Google Play offers no public download API, so the Store tab catalogs reputable open-source apps (F-Droid links) plus a "Search on Google Play" shortcut, while installation is sideload-only
 - **Dual storage backends** behind one abstraction (`StorageProvider`):
   - `drive` — Google Drive REST v3, resumable uploads with progress, full pagination, real quota via `about.get`, trash-based delete, GIS OAuth (interactive + silent reconnect). **Access tokens are kept in memory only.**
   - `local` — Next.js API routes + Prisma/SQLite + on-disk blobs, 256 GB virtual cap. **Every route requires an authenticated session and scopes all rows to the caller's account.**
@@ -65,6 +72,8 @@ Other scripts: `bun run build` (production build), `bun run start` (serve the st
 6. Copy the **Client ID** (ends in `.apps.googleusercontent.com`)
 7. On the phone: **Settings → Google Drive** → paste Client ID → **Connect** → sign in with your Google account
 
+A **default Client ID is already baked in** (public identifier for this project), so step 6/7 are usually just “Connect”. You still must add the origin you open the app from (see step 5) to the OAuth client's **Authorized JavaScript origins**, or Google will reject the token request.
+
 A Client ID is a **public identifier** — the app never asks for a client secret or your Google password. The access token stays in memory in your browser session only. All phone files live in a `PhoneStorage` folder in your Drive root and count against your real plan quota.
 
 ## Limitations & hosting requirements
@@ -84,7 +93,9 @@ bun test
 - `tests/api-storage-auth.test.ts` — integration: unauthenticated access rejected, per-user ownership isolation, parent-ownership checks, upload limits, note-update content preservation, orphan-file adoption
 - `tests/drive-unit.test.ts` — mocked Drive API: `files.list` pagination, upload-origin URL construction (`updateContent` regression), quota mapping, walk traversal cap
 - `tests/prefs.test.ts` — settings JSON validation / corruption handling
-- `tests/phone-store.test.ts` — provider selection rules (expired Drive token never falls back to local), account-switch state clearing
+- `tests/apps-registry.test.ts` — installed-apps manifest validation, upsert/upgrade semantics, install (APKs folder creation, MIME, progress, existing-file reuse) and uninstall (optional blob delete) against a fake provider
+- `tests/apk-parse.test.ts` — **real APK fixture** (KISS Launcher from F-Droid): package/version/SDK/permissions/icon extraction + normalizer rejection cases
+- `tests/phone-store.test.ts` — provider selection rules (expired Drive token never falls back to local), account-switch state clearing, baked-in Client ID behavior
 
 ## Project layout
 
@@ -97,13 +108,16 @@ src/
   components/phone/
     PhoneRoot.tsx             # system UI orchestration (z-layer stack)
     LocalAuthDialog.tsx       # sign-in dialog for the local storage account
+    InstalledAppDialog.tsx    # APK app info + uninstall (honest execution notice)
     shell.tsx                 # status bar, nav bar, lock screen, shade, recents…
-    HomeScreen.tsx            # launcher + app drawer
-    apps/                     # Files, Photos, Camera, Settings, Notes, Music, …
+    HomeScreen.tsx            # launcher + app drawer (system + installed apps)
+    apps/                     # Files, Photos, Camera, Settings, Notes, Music, PlayStoreApp, …
   lib/
     auth.ts                   # scrypt passwords, HttpOnly session cookies
+    apk.ts                    # APK binary-manifest parsing + normalization
+    apps-registry.ts          # installed-apps manifest (Drive + local persistence)
     prefs.ts                  # versioned preferences JSON (Drive + local)
     storage/                  # StorageProvider types + Local/Drive implementations
-    phone-store.ts            # zustand store (system UI + storage state)
+    phone-store.ts            # zustand store (system UI + storage + app registry state)
 prisma/schema.prisma          # VFile tree (per-owner) + LocalUser/LocalSession
 ```

@@ -18,6 +18,7 @@ import {
   TriangleAlert,
   UserRound,
   RotateCcw,
+  Package,
 } from "lucide-react";
 import { usePhone } from "@/lib/phone-store";
 import { formatBytes } from "@/lib/format";
@@ -33,6 +34,10 @@ export default function SettingsApp() {
   const driveSessionExpired = usePhone((s) => s.driveSessionExpired);
   const localUser = usePhone((s) => s.localUser);
   const prefsCorrupted = usePhone((s) => s.prefsCorrupted);
+  const installedApps = usePhone((s) => s.installedApps);
+  const appsCorrupted = usePhone((s) => s.appsCorrupted);
+  const resetCorruptedApps = usePhone((s) => s.resetCorruptedApps);
+  const openApp = usePhone((s) => s.openApp);
   const setDriveClientId = usePhone((s) => s.setDriveClientId);
   const connectDrive = usePhone((s) => s.connectDrive);
   const trySilentReconnect = usePhone((s) => s.trySilentReconnect);
@@ -251,8 +256,9 @@ export default function SettingsApp() {
                     </button>
                   </li>
                   <li>
-                    <b className="text-white/85">5.</b> Copy the Client ID (ends with .apps.googleusercontent.com) and paste it below. A Client
-                    ID is a public identifier — never enter a client secret or password here.
+                    <b className="text-white/85">5.</b> Copy the Client ID (ends with .apps.googleusercontent.com) and paste it below. Your
+                    Client ID is already pre-filled — you normally only need step 4. A Client ID is
+                    a public identifier — never enter a client secret or password here.
                   </li>
                 </ol>
               )}
@@ -346,6 +352,27 @@ export default function SettingsApp() {
           )}
         </section>
 
+        {/* installed apps (APK manager) */}
+        <section className="rounded-3xl bg-white/[0.06] p-4 ring-1 ring-white/10">
+          <div className="flex items-center gap-3 pb-2">
+            <Package className="h-4.5 w-4.5 text-lime-300" />
+            <h2 className="text-[13px] font-semibold text-white">Apps</h2>
+            <span className="ml-auto rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white/60">
+              {installedApps.length} installed
+            </span>
+          </div>
+          <p className="text-[10.5px] leading-relaxed text-white/40">
+            APK files are parsed and stored with their real manifest metadata. Their code cannot
+            run on this simulated phone.
+          </p>
+          <button
+            onClick={() => openApp("store")}
+            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-lime-500/90 py-2.5 text-[11px] font-bold text-zinc-900 transition hover:bg-lime-400"
+          >
+            <Package className="h-3.5 w-3.5" /> Open Play Store
+          </button>
+        </section>
+
         {/* corrupted settings recovery */}
         {prefsCorrupted && (
           <section className="rounded-3xl bg-amber-500/10 p-4 ring-1 ring-amber-400/30">
@@ -363,6 +390,29 @@ export default function SettingsApp() {
                   className="mt-3 flex items-center gap-2 rounded-xl bg-amber-500/90 px-4 py-2 text-[11px] font-bold text-white transition hover:bg-amber-500 disabled:opacity-40"
                 >
                   {resetting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                  {storageMode === "drive" ? "Archive & replace file" : "Clear & start fresh"}
+                </button>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {/* corrupted installed-apps recovery */}
+        {appsCorrupted && (
+          <section className="rounded-3xl bg-amber-500/10 p-4 ring-1 ring-amber-400/30">
+            <div className="flex items-start gap-3">
+              <TriangleAlert className="mt-0.5 h-4.5 w-4.5 shrink-0 text-amber-300" />
+              <div className="flex-1">
+                <h2 className="text-[13px] font-semibold text-amber-200">Saved app list is corrupted</h2>
+                <p className="mt-1 text-[10.5px] leading-relaxed text-amber-100/70">
+                  The installed-apps file failed validation. The app list is empty for now and the
+                  original file was kept. APK files themselves are untouched.
+                </p>
+                <button
+                  onClick={() => void resetCorruptedApps()}
+                  className="mt-3 flex items-center gap-2 rounded-xl bg-amber-500/90 px-4 py-2 text-[11px] font-bold text-white transition hover:bg-amber-500"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
                   {storageMode === "drive" ? "Archive & replace file" : "Clear & start fresh"}
                 </button>
               </div>
@@ -409,9 +459,9 @@ export default function SettingsApp() {
             ))}
           </dl>
           <p className="mt-2.5 text-[9.5px] leading-relaxed text-white/30">
-            DroidDrive simulates a phone interface in the browser. It does not run Android OS,
-            native APK apps, real cellular calls, or SMS delivery. Phone and Messages are
-            simulations; Camera uses your real webcam.
+            DroidDrive simulates a phone interface in the browser. It does not run Android OS or
+            execute APK code — APK files are parsed, stored and managed only. Calls and Messages
+            are simulations; Camera uses your real webcam.
           </p>
         </section>
       </div>

@@ -10,6 +10,7 @@ import {
   Video,
   FileArchive,
   FileCode,
+  Package,
   Upload,
   FolderPlus,
   MoreVertical,
@@ -21,9 +22,13 @@ import {
   ChevronRight,
   X,
   RefreshCw,
+  Loader2,
 } from "lucide-react";
 import { usePhone, accountGen } from "@/lib/phone-store";
 import { formatBytes, formatDate, fileKindOf } from "@/lib/format";
+import { parseApkBlob } from "@/lib/apk";
+import type { ApkInfo } from "@/lib/apk";
+import { ReviewCard } from "./PlayStoreApp";
 import type { StorageItem, QuotaInfo } from "@/lib/storage/types";
 import { AppHeader, PhoneDialog, PhoneToast } from "../shell";
 
@@ -50,6 +55,12 @@ export default function FilesApp() {
   const [dialog, setDialog] = useState<null | { type: "newFolder" | "rename" | "delete"; item?: StorageItem }>(null);
   const [inputVal, setInputVal] = useState("");
   const [preview, setPreview] = useState<{ item: StorageItem; url: string; text?: string } | null>(null);
+  const [apkInstall, setApkInstall] = useState<{ item: StorageItem; blob: Blob } | null>(null);
+  const [apkInfo, setApkInfo] = useState<ApkInfo | null>(null);
+  const [apkParsing, setApkParsing] = useState(false);
+  const [apkInstalling, setApkInstalling] = useState(false);
+  const [apkPct, setApkPct] = useState(0);
+  const installApkAction = usePhone((s) => s.installApk);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const current = path[path.length - 1];
@@ -92,6 +103,9 @@ export default function FilesApp() {
         const text = await blob.text();
         const url = URL.createObjectURL(blob);
         setPreview({ item, url, text });
+      } else if (kind === "apk") {
+        const blob = await provider.download(item.id);
+        setApkInstall({ item, blob });
       } else {
         downloadItem(item);
       }
@@ -162,6 +176,56 @@ export default function FilesApp() {
       refresh();
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Action failed");
+    }
+  };
+
+  const closeApkInstall = () => {
+    setApkInstall(null);
+    setApkInfo(null);
+    setApkPct(0);
+  };
+
+  /* parse the APK whenever an install dialog opens */
+  useEffect(() => {
+    if (!apkInstall) return;
+    const gen = accountGen();
+    setApkParsing(true);
+    setApkInfo(null);
+    parseApkBlob(apkInstall.blob, apkInstall.item.name)
+      .then((info) => {
+        if (gen !== accountGen()) return;
+        setApkInfo(info);
+      })
+      .catch((e) => {
+        if (gen !== accountGen()) return;
+        showToast(e instanceof Error ? e.message : "Could not read this APK file");
+        closeApkInstall();
+      })
+      .finally(() => {
+        if (gen === accountGen()) setApkParsing(false);
+      });
+  }, [apkInstall, showToast]);
+
+  const submitApkInstall = async () => {
+    if (!apkInstall || !apkInfo) return;
+    setApkInstalling(true);
+    setApkPct(0);
+    try {
+      const app = await installApkAction({
+        blob: apkInstall.blob,
+        fileName: apkInstall.item.name,
+        info: apkInfo,
+        existingFileId: apkInstall.item.id,
+        onProgress: (loaded, total) => {
+          if (total > 0) setApkPct(Math.round((loaded / total) * 100));
+        },
+      });
+      showToast(`${app.label} installed - see Play Store > My apps`);
+      closeApkInstall();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Installation failed");
+    } finally {
+      setApkInstalling(false);
     }
   };
 
@@ -344,6 +408,8 @@ export default function FilesApp() {
                         <FileText className="h-5 w-5 text-red-400" />
                       ) : meta.kind === "archive" ? (
                         <FileArchive className="h-5 w-5 text-orange-400" />
+                      ) : meta.kind === "apk" ? (
+                        <Package className="h-5 w-5 text-lime-400" />
                       ) : meta.kind === "text" ? (
                         <FileCode className="h-5 w-5 text-teal-300" />
                       ) : (
@@ -450,6 +516,49 @@ export default function FilesApp() {
             </div>
           </>
         )}
+      </PhoneDialog>
+
+      {/* APK install dialog */}
+      <PhoneDialog open={apkInstall !== null} onClose={closeApkInstall}>
+        <div className="w-full max-w-[320px] rounded-3xl bg-zinc-900 p-5 ring-1 ring-white/15">
+          <h3 className="text-sm font-semibold text-white">Install APK</h3>
+          {apkParsing || !apkInfo ? (
+            <div className="flex items-center gap-2.5 py-6 text-xs text-white/60">
+              <Loader2 className="h-4 w-4 animate-spin text-emerald-300" /> Reading Android manifest…
+            </div>
+          ) : (
+            <>
+              <ReviewCard info={apkInfo} sizeBytes={apkInstall?.blob.size ?? 0} fileName={apkInstall?.item.name ?? ""} />
+              {apkInstalling && (
+                <div className="mt-3">
+                  <div className="flex justify-between text-[10px] text-white/60">
+                    <span>Installing…</span>
+                    <span>{apkPct}%</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+                    <div className="h-full rounded-full bg-emerald-400 transition-all" style={{ width: `${Math.max(apkPct, 3)}%` }} />
+                  </div>
+                </div>
+              )}
+              <div className="mt-4 flex gap-2">
+                <button
+                  onClick={closeApkInstall}
+                  disabled={apkInstalling}
+                  className="flex-1 rounded-xl bg-white/10 py-2.5 text-[11px] font-semibold text-white/85 transition hover:bg-white/15 disabled:opacity-40"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void submitApkInstall()}
+                  disabled={apkInstalling}
+                  className="flex-1 rounded-xl bg-emerald-500 py-2.5 text-[11px] font-bold text-white transition hover:bg-emerald-400 disabled:opacity-40"
+                >
+                  {apkInstalling ? "Installing…" : "Install"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </PhoneDialog>
 
       {/* preview overlay */}

@@ -5,7 +5,7 @@
  */
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { execSync } from "child_process";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 
@@ -53,8 +53,10 @@ function cookieToken(res: Response): string {
 }
 
 beforeAll(async () => {
+  // Ensure the SQLite file exists before schema initialization on a fresh checkout.
+  writeFileSync(path.join(TEST_DIR, "test.db"), "", { flag: "a" });
   execSync("bunx prisma db push --skip-generate", {
-    cwd: "/home/z/my-project",
+    cwd: path.resolve(import.meta.dir, ".."),
     env: { ...process.env, DATABASE_URL: DB_URL },
     stdio: "pipe",
   });
@@ -106,7 +108,7 @@ beforeAll(async () => {
 }, 60000);
 
 afterAll(async () => {
-  await dbMod.db.$disconnect();
+  await dbMod?.db.$disconnect();
   rmSync(TEST_DIR, { recursive: true, force: true });
 });
 
