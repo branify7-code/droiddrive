@@ -36,3 +36,20 @@ Work Log:
 Stage Summary:
 - App is feature-complete and awaiting only the user's Google OAuth Client ID
 - Client ID can be pasted by user in Settings (copyable origin provided there) or sent in chat to be baked in as default
+
+---
+Task ID: 3
+Agent: main (Z.ai)
+Task: Create GitHub repo and push the DroidDrive project using user-provided token
+
+Work Log:
+- Validated token (account: branify7-code, repo scope confirmed)
+- Security cleanup before push: untracked .env, db/custom.db, db/vstorage/* test blobs; extended .gitignore with /db/ and *.db rules
+- Added README.md (features, setup, Google Client ID guide, project layout) and .env.example
+- Created private repo branify7-code/droiddrive via GitHub API
+- Pushed main (5 commits, 111 files); remote stored without embedded token; verified commit 744f936 on GitHub
+- Final sweep: no .env, no db artifacts, no token strings anywhere in pushed tree
+
+Stage Summary:
+- Repo live at https://github.com/branify7-code/droiddrive (private)
+- Repo is clone-ready: bun install -> cp .env.example .env -> bunx prisma db push -> bun run dev
