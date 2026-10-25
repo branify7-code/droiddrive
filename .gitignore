@@ -63,3 +63,6 @@ server.log
 
 # user uploads / credentials (never commit secrets)
 /upload/
+
+# local deliverables (never commit build artifacts/exports)
+/download/
