@@ -1,0 +1,24 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model VFile {
+  id        String   @id @default(cuid())
+  name      String
+  mime      String   @default("application/octet-stream")
+  isFolder  Boolean  @default(false)
+  parentId  String?
+  size      Int      @default(0)
+  blobPath  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  parent    VFile?   @relation("FileTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  VFile[]  @relation("FileTree")
+
+  @@index([parentId])
+}
